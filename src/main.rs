@@ -52,7 +52,7 @@ async fn sentence_embedding(
     }
 
     let tensors = tensors.unwrap();
-    let mut embeddings = Vec::new();
+    let mut embeddings = Vec::with_capacity(tensors.len());
     for (i, t) in tensors.iter().enumerate() {
         embeddings.push(Embedding {
             object: "embedding",
