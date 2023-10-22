@@ -1,0 +1,4 @@
+{
+    "input": ["The food was delicious and the waiter", "hello world"],
+    "model": "all-MiniLM-L12-v2"
+}

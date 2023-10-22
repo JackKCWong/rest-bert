@@ -1,8 +1,8 @@
-POST http://localhost:8080/sentence-embedding
+POST http://localhost:8080/v1/embeddings
 Content-Type: application/json
 
 {
-    "model_id": "helloworld",
+    "model": "helloworld",
     "inputs": [
         "hello",
         "world"
