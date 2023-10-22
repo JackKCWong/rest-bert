@@ -1,4 +1,7 @@
-export LIBTORCH=$(pwd)/pytorch/lib/python3.9/site-packages/torch/
+
+
+export LIBTORCH_USE_PYTORCH=1
+export LIBTORCH=$(pwd)/pytorch
 export LD_LIBRARY_PATH=${LIBTORCH}/lib:$LD_LIBRARY_PATH
 
 # LIBTORCH_INCLUDE must contains `include` directory.
