@@ -1,11 +1,11 @@
-use std::{env, sync::Mutex};
+use std::env;
 
 use actix_web::{
     post,
     web::{self},
     App, HttpResponse, HttpServer, Responder,
 };
-use pool::{Dirty, Pool};
+use async_object_pool::Pool;
 use rust_bert::pipelines::sentence_embeddings::{
     SentenceEmbeddingsBuilder, SentenceEmbeddingsModel,
 };
@@ -32,7 +32,7 @@ struct Embedding {
 }
 
 struct AppState {
-    models: Mutex<Pool<Dirty<SentenceEmbeddingsModel>>>,
+    models: Pool<SentenceEmbeddingsModel>,
 }
 
 #[post("/v1/embeddings")]
@@ -40,18 +40,18 @@ async fn sentence_embedding(
     app: web::Data<AppState>,
     form: web::Json<EmbeddingRequest>,
 ) -> impl Responder {
-    let model = app.models.lock().unwrap().checkout();
-
-    if model.is_none() {
-        return HttpResponse::TooManyRequests().body("");
-    } 
-
-    let model = model.unwrap();
+    let model = app.models.take_or_create(|| {
+        SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2")
+            .create_model()
+            .unwrap()
+    }).await;
 
     let tensors = model.encode(&form.input);
     if tensors.is_err() {
         return HttpResponse::InternalServerError().body("Could not embed input");
     }
+
+    app.models.put(model).await;
 
     let tensors = tensors.unwrap();
     let mut embeddings = Vec::new();
@@ -79,26 +79,18 @@ async fn main() -> std::io::Result<()> {
         println!("{key}: {value}");
     }
 
-    let model = SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2").create_model();
+    // let model = SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2").create_model();
 
-    if model.is_err() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Could not load model",
-        ));
-    }
+    // if model.is_err() {
+    //     return Err(std::io::Error::new(
+    //         std::io::ErrorKind::Other,
+    //         "Could not load model",
+    //     ));
+    // }
 
-    let pool = Pool::with_capacity(3, 0, || {
-        Dirty(
-            SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2")
-                .create_model()
-                .unwrap(),
-        )
-    });
+    let pool = Pool::new(4);
 
-    let data = web::Data::new(AppState {
-        models: Mutex::new(pool),
-    });
+    let data = web::Data::new(AppState { models: pool });
 
     HttpServer::new(move || {
         App::new()
