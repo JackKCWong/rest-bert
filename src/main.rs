@@ -34,6 +34,8 @@ struct Embedding {
     index: usize,
 }
 
+#[forbid(unsafe_code)]
+
 struct AppState {
     models: Pool<Arc<Mutex<SentenceEmbeddingsModel>>>,
 }
