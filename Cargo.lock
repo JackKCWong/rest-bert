@@ -1321,6 +1321,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 
 [[package]]
+name = "pool"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7ac1531a0016945992b4e816e81538dfad0b9f00d280bcb707d711839f1536d"
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1504,6 +1510,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "lazy_static",
+ "pool",
  "rust-bert",
  "serde",
  "serde_json",

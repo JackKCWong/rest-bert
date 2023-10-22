@@ -1,10 +1,11 @@
-use std::sync::Mutex;
+use std::{env, sync::Mutex};
 
 use actix_web::{
     post,
     web::{self},
     App, HttpResponse, HttpServer, Responder,
 };
+use pool::{Dirty, Pool};
 use rust_bert::pipelines::sentence_embeddings::{
     SentenceEmbeddingsBuilder, SentenceEmbeddingsModel,
 };
@@ -18,20 +19,20 @@ struct EmbeddingRequest {
 
 #[derive(Deserialize, Serialize)]
 struct EmbeddingResponse {
-    object: String,
+    object: &'static str,
     data: Vec<Embedding>,
-    model: String,
+    model: &'static str,
 }
 
 #[derive(Deserialize, Serialize)]
 struct Embedding {
-    object: String,
+    object: &'static str,
     embedding: Vec<f32>,
     index: usize,
 }
 
 struct AppState {
-    model: Mutex<SentenceEmbeddingsModel>,
+    models: Mutex<Pool<Dirty<SentenceEmbeddingsModel>>>,
 }
 
 #[post("/v1/embeddings")]
@@ -39,8 +40,15 @@ async fn sentence_embedding(
     app: web::Data<AppState>,
     form: web::Json<EmbeddingRequest>,
 ) -> impl Responder {
+    let model = app.models.lock().unwrap().checkout();
 
-    let tensors = app.model.lock().unwrap().encode(&form.input);
+    if model.is_none() {
+        return HttpResponse::TooManyRequests().body("");
+    } 
+
+    let model = model.unwrap();
+
+    let tensors = model.encode(&form.input);
     if tensors.is_err() {
         return HttpResponse::InternalServerError().body("Could not embed input");
     }
@@ -49,15 +57,15 @@ async fn sentence_embedding(
     let mut embeddings = Vec::new();
     for (i, t) in tensors.iter().enumerate() {
         embeddings.push(Embedding {
-            object: "embedding".to_owned(),
+            object: "embedding",
             embedding: t.to_vec(),
             index: i,
         });
     }
 
     match serde_json::to_string(&EmbeddingResponse {
-        model: "all-miniLM-L12-v2".to_owned(),
-        object: "list".to_owned(),
+        model: "all-MiniLM-L12-v2",
+        object: "list",
         data: embeddings,
     }) {
         Ok(body) => HttpResponse::Ok().body(body),
@@ -67,6 +75,10 @@ async fn sentence_embedding(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    for (key, value) in env::vars() {
+        println!("{key}: {value}");
+    }
+
     let model = SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2").create_model();
 
     if model.is_err() {
@@ -76,8 +88,16 @@ async fn main() -> std::io::Result<()> {
         ));
     }
 
+    let pool = Pool::with_capacity(3, 0, || {
+        Dirty(
+            SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2")
+                .create_model()
+                .unwrap(),
+        )
+    });
+
     let data = web::Data::new(AppState {
-        model: Mutex::new(model.unwrap()),
+        models: Mutex::new(pool),
     });
 
     HttpServer::new(move || {
