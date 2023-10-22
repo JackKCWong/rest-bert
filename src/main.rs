@@ -1,5 +1,13 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
-use rust_bert::pipelines::sentence_embeddings::SentenceEmbeddingsBuilder;
+use std::sync::Mutex;
+
+use actix_web::{
+    post,
+    web::{self},
+    App, HttpResponse, HttpServer, Responder,
+};
+use rust_bert::pipelines::sentence_embeddings::{
+    SentenceEmbeddingsBuilder, SentenceEmbeddingsModel,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
@@ -22,27 +30,27 @@ struct Embedding {
     index: usize,
 }
 
+struct AppState {
+    model: Mutex<SentenceEmbeddingsModel>,
+}
+
 #[post("/v1/embeddings")]
-async fn sentence_embedding(form: web::Json<EmbeddingRequest>) -> impl Responder {
-    let model = SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2")
-        .create_model();
+async fn sentence_embedding(
+    app: web::Data<AppState>,
+    form: web::Json<EmbeddingRequest>,
+) -> impl Responder {
 
-    if model.is_err() {
-        return HttpResponse::InternalServerError().body("Could not load model");
-    }
-
-    let model = model.unwrap();
-    let embeddings = model.encode(&form.input);
-    if embeddings.is_err() {
+    let tensors = app.model.lock().unwrap().encode(&form.input);
+    if tensors.is_err() {
         return HttpResponse::InternalServerError().body("Could not embed input");
     }
 
-    let output = embeddings.unwrap();
+    let tensors = tensors.unwrap();
     let mut embeddings = Vec::new();
-    for (i, e) in output.iter().enumerate() {
+    for (i, t) in tensors.iter().enumerate() {
         embeddings.push(Embedding {
             object: "embedding".to_owned(),
-            embedding: e.to_vec(),
+            embedding: t.to_vec(),
             index: i,
         });
     }
@@ -57,11 +65,27 @@ async fn sentence_embedding(form: web::Json<EmbeddingRequest>) -> impl Responder
     }
 }
 
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| App::new().service(sentence_embedding))
-        .bind(("localhost", 8080))?
-        .run()
-        .await
+    let model = SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2").create_model();
+
+    if model.is_err() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Could not load model",
+        ));
+    }
+
+    let data = web::Data::new(AppState {
+        model: Mutex::new(model.unwrap()),
+    });
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(data.clone())
+            .service(sentence_embedding)
+    })
+    .bind(("localhost", 8080))?
+    .run()
+    .await
 }
