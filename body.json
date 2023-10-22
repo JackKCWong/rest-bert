@@ -1,4 +1,7 @@
 {
-    "input": ["The food was delicious and the waiter", "hello world"],
+    "input": [
+        "Rust-native state-of-the-art Natural Language Processing models and pipelines. Port of Hugging Face's Transformers library, using tch-rs or onnxruntime bindings and pre-processing from rust-tokenizers. Supports multi-threaded tokenization and GPU inference. This repository exposes the model base architecture, task-specific heads (see below) and ready-to-use pipelines. Benchmarks are available at the end of this document.",
+        "Get started with tasks including question answering, named entity recognition, translation, summarization, text generation, conversational agents and more in just a few lines of code"
+    ],
     "model": "all-MiniLM-L12-v2"
 }
