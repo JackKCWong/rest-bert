@@ -1,11 +1,14 @@
-use std::env;
+use std::{
+    env,
+    sync::Mutex,
+};
 
 use actix_web::{
     post,
     web::{self},
     App, HttpResponse, HttpServer, Responder,
 };
-use async_object_pool::Pool;
+use pool::{Dirty, Pool};
 use rust_bert::pipelines::sentence_embeddings::{
     SentenceEmbeddingsBuilder, SentenceEmbeddingsModel,
 };
@@ -32,7 +35,7 @@ struct Embedding {
 }
 
 struct AppState {
-    models: Pool<SentenceEmbeddingsModel>,
+    models: Mutex<Pool<Dirty<SentenceEmbeddingsModel>>>,
 }
 
 #[post("/v1/embeddings")]
@@ -40,18 +43,13 @@ async fn sentence_embedding(
     app: web::Data<AppState>,
     form: web::Json<EmbeddingRequest>,
 ) -> impl Responder {
-    let model = app.models.take_or_create(|| {
-        SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2")
-            .create_model()
-            .unwrap()
-    }).await;
+    let model = app.models.lock().unwrap().checkout().unwrap();
+    let model = Mutex::new(model);
 
-    let tensors = model.encode(&form.input);
+    let tensors = web::block(move || model.lock().unwrap().encode(&form.input).unwrap()).await;
     if tensors.is_err() {
         return HttpResponse::InternalServerError().body("Could not embed input");
     }
-
-    app.models.put(model).await;
 
     let tensors = tensors.unwrap();
     let mut embeddings = Vec::new();
@@ -88,9 +86,17 @@ async fn main() -> std::io::Result<()> {
     //     ));
     // }
 
-    let pool = Pool::new(4);
+    let pool = Pool::with_capacity(6, 0, || {
+        Dirty(
+            SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2")
+                .create_model()
+                .unwrap(),
+        )
+    });
 
-    let data = web::Data::new(AppState { models: pool });
+    let data = web::Data::new(AppState {
+        models: Mutex::new(pool),
+    });
 
     HttpServer::new(move || {
         App::new()
