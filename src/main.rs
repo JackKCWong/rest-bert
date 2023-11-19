@@ -1,3 +1,6 @@
+mod model;
+mod app;
+
 use std::{
     env,
     sync::{Arc, Mutex},
@@ -10,35 +13,13 @@ use actix_web::{
 };
 use async_object_pool::Pool;
 use rust_bert::pipelines::sentence_embeddings::{
-    SentenceEmbeddingsBuilder, SentenceEmbeddingsModel,
+    SentenceEmbeddingsBuilder,
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize)]
-struct EmbeddingRequest {
-    model: String,
-    input: Vec<String>,
-}
 
-#[derive(Deserialize, Serialize)]
-struct EmbeddingResponse {
-    object: &'static str,
-    data: Vec<Embedding>,
-    model: &'static str,
-}
-
-#[derive(Deserialize, Serialize)]
-struct Embedding {
-    object: &'static str,
-    embedding: Vec<f32>,
-    index: usize,
-}
-
-#[forbid(unsafe_code)]
-
-struct AppState {
-    models: Pool<Arc<Mutex<SentenceEmbeddingsModel>>>,
-}
+use app::*;
+use model::*;
 
 #[post("/v1/embeddings")]
 async fn sentence_embedding(
@@ -57,7 +38,7 @@ async fn sentence_embedding(
         .await;
 
     let model_rc = model.clone();
-    let tensors = web::block(move || model.lock().unwrap().encode(&form.input).unwrap()).await;
+    let tensors = web::block(move || model.lock().unwrap().encode(&form.inputs).unwrap()).await;
 
     app.models.put(model_rc).await;
 
@@ -90,15 +71,6 @@ async fn main() -> std::io::Result<()> {
     for (key, value) in env::vars() {
         println!("{key}: {value}");
     }
-
-    // let model = SentenceEmbeddingsBuilder::local("./all-MiniLM-L12-v2").create_model();
-
-    // if model.is_err() {
-    //     return Err(std::io::Error::new(
-    //         std::io::ErrorKind::Other,
-    //         "Could not load model",
-    //     ));
-    // }
 
     let pool = Pool::new(4);
 
